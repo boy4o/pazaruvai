@@ -247,19 +247,7 @@ async function fetchJsonFromPossiblePaths(paths) {
             }
 
             const data = await response.json();
-            if (Array.isArray(data)) {
-                return data;
-            }
-
-            if (data && Array.isArray(data.products)) {
-                return data.products;
-            }
-
-            if (data && Array.isArray(data.items)) {
-                return data.items;
-            }
-
-            lastError = new Error(`${path} не съдържа масив с продукти.`);
+            return { data, path };
         } catch (error) {
             lastError = error;
         }
@@ -268,27 +256,76 @@ async function fetchJsonFromPossiblePaths(paths) {
     throw lastError || new Error('Неуспешно зареждане на JSON файла.');
 }
 
+function toNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(String(value).replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getArrayFromValue(value) {
+    if (Array.isArray(value)) return value;
+    if (value && Array.isArray(value.products)) return value.products;
+    if (value && Array.isArray(value.items)) return value.items;
+    return null;
+}
+
+function extractCategoryItems(jsonData, categoryId) {
+    const directItems = getArrayFromValue(jsonData);
+    if (directItems) return directItems;
+
+    if (jsonData && typeof jsonData === 'object') {
+        const byCategoryId = getArrayFromValue(jsonData[categoryId]);
+        if (byCategoryId) return byCategoryId;
+
+        const categoriesAsObject = jsonData.categories && typeof jsonData.categories === 'object' && !Array.isArray(jsonData.categories)
+            ? getArrayFromValue(jsonData.categories[categoryId])
+            : null;
+        if (categoriesAsObject) return categoriesAsObject;
+
+        if (Array.isArray(jsonData.categories)) {
+            const categoryEntry = jsonData.categories.find(cat => cat?.id === categoryId || cat?.categoryId === categoryId || cat?.slug === categoryId || cat?.name === categoryId);
+            const categoryItems = categoryEntry ? getArrayFromValue(categoryEntry) : null;
+            if (categoryItems) return categoryItems;
+        }
+    }
+
+    if (Array.isArray(jsonData?.products)) {
+        return jsonData.products.filter(item => item?.categoryId === categoryId || item?.category === categoryId || item?.categorySlug === categoryId);
+    }
+
+    return [];
+}
+
 function normalizeProduct(rawItem, store) {
+    const productName = rawItem.productName || rawItem.name || rawItem.title || 'Без име';
+    const description = rawItem.description || rawItem.desc || rawItem.details || '';
     return {
-        productId: rawItem.productId || `${store}-${rawItem.productName || 'item'}-${rawItem.description || ''}`,
-        productName: rawItem.productName || 'Без име',
-        description: rawItem.description || '',
+        productId: rawItem.productId || rawItem.id || `${store}-${productName}-${description}`,
+        productName,
+        description,
         offers: {
             billa: null,
             lidl: null,
             kaufland: null,
             fantastico: null,
             [store]: {
-                promoPrice: typeof rawItem.promoPrice === 'number' ? rawItem.promoPrice : Number(rawItem.promoPrice),
-                regularPrice: rawItem.regularPrice === null || rawItem.regularPrice === undefined || rawItem.regularPrice === '' ? null : Number(rawItem.regularPrice),
-                discountPercentage: rawItem.discountPercentage === null || rawItem.discountPercentage === undefined || rawItem.discountPercentage === '' ? null : Number(rawItem.discountPercentage),
-                validFrom: rawItem.validFrom || '',
-                validTo: rawItem.validTo || '',
+                promoPrice: toNumber(rawItem.promoPrice ?? rawItem.price ?? rawItem.promo_price ?? rawItem.salePrice),
+                regularPrice: toNumber(rawItem.regularPrice ?? rawItem.oldPrice ?? rawItem.regular_price ?? rawItem.basePrice),
+                discountPercentage: toNumber(rawItem.discountPercentage ?? rawItem.discount ?? rawItem.discount_percent),
+                validFrom: rawItem.validFrom || rawItem.from || rawItem.valid_from || '',
+                validTo: rawItem.validTo || rawItem.to || rawItem.valid_to || '',
                 loyaltyCard: Boolean(rawItem.loyaltyCard),
                 notes: rawItem.notes || ''
             }
         }
     };
+}
+
+function getProductKey(item, store) {
+    if (item.productId || item.id) return String(item.productId || item.id);
+    const name = (item.productName || item.name || item.title || '').toLowerCase().trim();
+    const description = (item.description || item.desc || item.details || '').toLowerCase().trim();
+    return `${store}-${name}-${description}`;
 }
 
 async function fetchCategoryData(categoryId) {
@@ -299,29 +336,44 @@ async function fetchCategoryData(categoryId) {
 
     for (const sm of appConfig.supermarkets) {
         try {
-            const items = await fetchJsonFromPossiblePaths([
+            const { data, path } = await fetchJsonFromPossiblePaths([
                 `data/${sm}/${categoryId}.json`,
-                `./data/${sm}/${categoryId}.json`
+                `./data/${sm}/${categoryId}.json`,
+                `data/${sm}/${sm}.json`,
+                `./data/${sm}/${sm}.json`,
+                `data/${sm}/products.json`,
+                `./data/${sm}/products.json`,
+                `data/${sm}/offers.json`,
+                `./data/${sm}/offers.json`,
+                `data/${sm}/data.json`,
+                `./data/${sm}/data.json`
             ]);
+
+            const items = extractCategoryItems(data, categoryId);
+            if (!Array.isArray(items) || items.length === 0) {
+                console.log(`Няма продукти за ${categoryId} в ${path}`);
+                continue;
+            }
 
             anyDataLoaded = true;
 
             for (const item of items) {
-                if (!productsMap.has(item.productId)) {
-                    productsMap.set(item.productId, {
-                        productId: item.productId,
-                        productName: item.productName,
-                        description: item.description,
+                const productKey = getProductKey(item, sm);
+                if (!productsMap.has(productKey)) {
+                    productsMap.set(productKey, {
+                        productId: item.productId || item.id || productKey,
+                        productName: item.productName || item.name || item.title || 'Без име',
+                        description: item.description || item.desc || item.details || '',
                         offers: { billa: null, lidl: null, kaufland: null, fantastico: null }
                     });
                 }
 
-                productsMap.get(item.productId).offers[sm] = {
-                    promoPrice: typeof item.promoPrice === 'number' ? item.promoPrice : Number(item.promoPrice),
-                    regularPrice: item.regularPrice === null || item.regularPrice === undefined || item.regularPrice === '' ? null : Number(item.regularPrice),
-                    discountPercentage: item.discountPercentage === null || item.discountPercentage === undefined || item.discountPercentage === '' ? null : Number(item.discountPercentage),
-                    validFrom: item.validFrom || '',
-                    validTo: item.validTo || '',
+                productsMap.get(productKey).offers[sm] = {
+                    promoPrice: toNumber(item.promoPrice ?? item.price ?? item.promo_price ?? item.salePrice),
+                    regularPrice: toNumber(item.regularPrice ?? item.oldPrice ?? item.regular_price ?? item.basePrice),
+                    discountPercentage: toNumber(item.discountPercentage ?? item.discount ?? item.discount_percent),
+                    validFrom: item.validFrom || item.from || item.valid_from || '',
+                    validTo: item.validTo || item.to || item.valid_to || '',
                     loyaltyCard: Boolean(item.loyaltyCard),
                     notes: item.notes || ''
                 };
@@ -333,14 +385,15 @@ async function fetchCategoryData(categoryId) {
 
     if (!anyDataLoaded) {
         const fallbackStore = categoryFallbackStore[categoryId] || 'billa';
-        const fallbackItems = await fetchJsonFromPossiblePaths([
+        const { data: fallbackData } = await fetchJsonFromPossiblePaths([
             `${categoryId}.json`,
             `./${categoryId}.json`
         ]);
+        const fallbackItems = extractCategoryItems(fallbackData, categoryId);
 
         fallbackItems.forEach(item => {
             const normalized = normalizeProduct(item, fallbackStore);
-            productsMap.set(normalized.productId, normalized);
+            productsMap.set(getProductKey(normalized, fallbackStore), normalized);
         });
     }
 
