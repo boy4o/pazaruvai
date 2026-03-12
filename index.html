@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pazaruvai.info - Пазарувай Информирано</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --billa-color: #f5c518;
+            --lidl-color: #0050aa;
+            --kaufland-color: #e50000;
+            --fantastico-color: #009b3a;
+        }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', sans-serif; }
+        .page { display: none; }
+        .page.active { display: block; }
+        .highlight-green { background-color: #e6fffa; color: #1a744f; font-weight: 600; }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white; padding: 2rem; border-radius: 0.5rem;
+            width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+        }
+        .ad-banner {
+            background-color: #f0f0f0; display: flex; align-items: center;
+            justify-content: center; color: #999; border-radius: 0.5rem; font-size: 0.875rem;
+        }
+        .billa-text { color: var(--billa-color); }
+        .lidl-text { color: var(--lidl-color); }
+        .kaufland-text { color: var(--kaufland-color); }
+        .fantastico-text { color: var(--fantastico-color); }
+        
+        .cta-button { transition: transform 0.2s ease-in-out, background-color 0.2s; }
+        .cta-button:hover { transform: translateY(-2px) scale(1.05); }
+        
+        /* Променени стилове за еднакви бутони на категориите */
+        .nav-button {
+            display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem; border: 1px solid #e5e7eb;
+            transition: transform 0.2s ease-in-out, background-color 0.2s, border-color 0.2s;
+            width: 100%;
+            max-width: 240px;
+            height: 64px; /* Фиксирана височина */
+            justify-content: flex-start;
+        }
+        @media (min-width: 640px) {
+            .nav-button {
+                width: 240px; /* Фиксирана ширина за по-големи екрани */
+            }
+        }
+        .nav-button:hover {
+            transform: translateY(-2px); background-color: #f3f4f6; border-color: #d1d5db;
+        }
+        .nav-button .icon { width: 1.5rem; height: 1.5rem; flex-shrink: 0; }
+        .nav-button span {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: left;
+            flex: 1;
+        }
+        /* Край на промените за бутоните */
+
+        .table-fixed td { word-wrap: break-word; }
+        
+        .sticky-page-header {
+            position: -webkit-sticky; position: sticky; top: 0;
+            z-index: 20; padding-top: 1rem; padding-bottom: 0.5rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        #table-head { position: -webkit-sticky; position: sticky; z-index: 10; }
+        #table-head th { background-color: #f9fafb; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+
+        <header class="mb-6">
+            <div class="flex justify-between items-center">
+                <div class="flex-1 flex justify-start">
+                    <img src="assets/images/logo.jpg" alt="Начало" id="home-logo" class="h-12 w-auto cursor-pointer object-contain transition-transform hover:scale-200" onclick="showPage('home')" />
+                </div>
+                <div class="flex-1 text-center">
+                     <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 cursor-pointer" onclick="showPage('home')">Pazaruvai.<span class="text-teal-600">Info</span></h1>
+                </div>
+                <div class="flex-1 flex justify-end">
+                    <button id="shopping-list-button" class="relative bg-teal-600 text-white px-3 sm:px-4 py-2 rounded-lg shadow hover:bg-teal-700 transition-colors cta-button flex items-center gap-2" onclick="showShoppingList()">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                        <span class="hidden sm:inline">Списък</span>
+                        <span id="shopping-list-count" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">0</span>
+                    </button>
+                </div>
+            </div>
+             <div class="ad-banner h-24 my-6">Рекламен банер (728x90)</div>
+            <nav id="main-nav" class="mt-4 bg-white p-4 rounded-lg shadow-sm">
+                <ul class="flex flex-wrap gap-3 justify-center"></ul>
+            </nav>
+        </header>
+
+        <main id="home-page" class="page active">
+            <div class="text-center bg-white p-8 rounded-lg shadow">
+                <h2 class="text-2xl font-semibold mb-4">Провери. Сравни. Пазарувай Информирано.</h2>
+                <p class="text-gray-600 mb-6">Сравнявай цените от седмичните брошури, на няколко от най-големите супермаркети, на едно място.</p>
+                 <a href="#main-nav" class="inline-block bg-teal-600 text-white px-6 py-3 rounded-lg shadow-lg cta-button">
+                    Изберете категория продукти
+                </a>
+            </div>
+        </main>
+
+        <main id="category-page" class="page">
+            <section class="sticky-page-header bg-gray-100">
+                <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+                    <h2 id="category-title" class="text-2xl font-bold text-gray-900"></h2>
+                    <div class="w-full sm:w-1/2">
+                        <input type="text" id="search-box" placeholder="Търсене на продукт..." class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500">
+                    </div>
+                </div>
+            </section>
+            
+            <div id="loading-spinner" class="hidden text-center my-8 text-gray-500">Зареждане на продуктите...</div>
+
+            <div class="overflow-x-auto bg-white rounded-lg shadow" id="table-container">
+                <table class="min-w-full divide-y divide-gray-200 table-fixed">
+                    <thead id="table-head" class="bg-gray-50"></thead>
+                    <tbody id="table-body" class="bg-white divide-y divide-gray-200"></tbody>
+                </table>
+            </div>
+        </main>
+
+    </div>
+
+    <div id="shopping-list-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">Списък за пазар</h2>
+                <button onclick="hideShoppingList()" class="text-gray-500 hover:text-gray-800 text-3xl leading-none">&times;</button>
+            </div>
+            <div id="shopping-list-items" class="mb-4"></div>
+            <div class="border-t pt-4">
+                <div class="flex justify-between items-center font-bold text-xl mb-4">
+                    <span>Обща сума:</span>
+                    <span id="total-price">0.00 €</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+// --- КОНФИГУРАЦИЯ И ДАННИ ---
+const appConfig = {
+    supermarkets: ["billa", "lidl", "kaufland", "fantastico"],
+    supermarketNames: { billa: "Billa", lidl: "Lidl", kaufland: "Kaufland", fantastico: "Fantastico" },
+    supermarketColors: { billa: 'billa', lidl: 'lidl', kaufland: 'kaufland', fantastico: 'fantastico' },
+    categories: [
+        { id: "osnovni-hrani", name: "Основни Храни", icon: `<img src="https://img.icons8.com/external-icongeek26-flat-icongeek26/48/000000/external-flour-baking-and-bakery-icongeek26-flat-icongeek26.png" class="icon"/>` },
+        { id: "hlyab-pechiva", name: "Хляб и Печива", icon: `<img src="https://img.icons8.com/color/48/000000/bread.png" class="icon"/>` },
+        { id: "mlecni-qica", name: "Млечни и Яйца", icon: `<img src="https://img.icons8.com/color/48/000000/milk-bottle.png" class="icon"/>` },
+        { id: "meso-kolbasi", name: "Месо и Колбаси", icon: `<img src="https://img.icons8.com/color/48/000000/steak.png" class="icon"/>` },
+        { id: "plodove-zelenchuci", name: "Плодове и Зеленчуци", icon: `<img src="https://img.icons8.com/color/48/000000/apple.png" class="icon"/>` },
+        { id: "konservi", name: "Консерви", icon: `<img src="https://img.icons8.com/color/48/000000/tin-can.png" class="icon"/>` },
+        { id: "zamrazeni-hrani", name: "Замразени Храни", icon: `<img src="https://img.icons8.com/color/48/000000/snowflake.png" class="icon"/>` },
+        { id: "sladkisi-deserti", name: "Сладкиши и Десерти", icon: `<img src="https://img.icons8.com/color/48/000000/cupcake.png" class="icon"/>` },
+        { id: "napitki", name: "Безалкохолни напитки", icon: `<img src="https://img.icons8.com/color/48/000000/soda-can.png" class="icon"/>` },
+        { id: "alkohol", name: "Алкохол", icon: `<img src="https://img.icons8.com/color/48/000000/wine-glass.png" class="icon"/>` }
+    ]
+};
+
+let loadedProducts = {}; // Кеш на вече заредените категории
+let currentCategoryProducts = [];
+let shoppingList = {};
+
+// --- ИНИЦИАЛИЗАЦИЯ ---
+document.addEventListener('DOMContentLoaded', () => {
+    populateNavigation();
+    showPage('home');
+    setupSearch();
+});
+
+function populateNavigation() {
+    const navUl = document.querySelector('#main-nav ul');
+    navUl.innerHTML = '';
+    appConfig.categories.forEach(category => {
+        const li = document.createElement('li');
+        li.innerHTML = `<button onclick="openCategory('${category.id}', '${category.name}')" class="nav-button text-gray-700 text-sm font-medium" title="${category.name}">
+            ${category.icon} <span>${category.name}</span>
+        </button>`;
+        navUl.appendChild(li);
+    });
+}
+
+// --- НАВИГАЦИЯ И ИЗВЛИЧАНЕ НА ДАННИ (FETCH) ---
+function showPage(pageId) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById(`${pageId}-page`).classList.add('active');
+    window.scrollTo(0, 0);
+}
+
+async function openCategory(categoryId, categoryName) {
+    showPage('category');
+    document.getElementById('category-title').textContent = categoryName;
+    document.getElementById('search-box').value = '';
+    
+    document.getElementById('loading-spinner').classList.remove('hidden');
+    document.getElementById('table-container').classList.add('hidden');
+
+    currentCategoryProducts = await fetchCategoryData(categoryId);
+    
+    document.getElementById('loading-spinner').classList.add('hidden');
+    document.getElementById('table-container').classList.remove('hidden');
+    
+    renderTable();
+}
+
+async function fetchCategoryData(categoryId) {
+    if (loadedProducts[categoryId]) return loadedProducts[categoryId];
+
+    const productsMap = new Map();
+
+    for (const sm of appConfig.supermarkets) {
+        try {
+            const response = await fetch(`data/${sm}/${categoryId}.json`);
+            if (!response.ok) continue; 
+            
+            const responseData = await response.json();
+            
+            // Фикс за JSON структурата: проверка дали върнатите данни са масив, или обект (напр. { products: [...] })
+            const items = Array.isArray(responseData) ? responseData : (responseData.products || responseData.items || []);
+            
+            for (const item of items) {
+                if (!productsMap.has(item.productId)) {
+                    productsMap.set(item.productId, {
+                        productId: item.productId,
+                        productName: item.productName,
+                        description: item.description,
+                        offers: { billa: null, lidl: null, kaufland: null, fantastico: null }
+                    });
+                }
+                productsMap.get(item.productId).offers[sm] = {
+                    promoPrice: item.promoPrice,
+                    regularPrice: item.regularPrice,
+                    discountPercentage: item.discountPercentage,
+                    validFrom: item.validFrom,
+                    validTo: item.validTo,
+                    loyaltyCard: item.loyaltyCard,
+                    notes: item.notes
+                };
+            }
+        } catch (error) {
+            console.warn(`Няма данни или грешка в JSON структурата за ${sm} в категория ${categoryId}`, error);
+        }
+    }
+
+    const result = Array.from(productsMap.values());
+    loadedProducts[categoryId] = result;
+    return result;
+}
+
+// --- ВИЗУАЛИЗАЦИЯ НА ТАБЛИЦАТА ---
+function renderTable() {
+    const thead = document.getElementById('table-head');
+    const tbody = document.getElementById('table-body');
+    
+    // Генериране на хедъра
+    let headHTML = `<tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">Продукт</th>`;
+    appConfig.supermarkets.forEach(sm => {
+        headHTML += `<th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${appConfig.supermarketColors[sm]}-text w-1/6">${appConfig.supermarketNames[sm]}</th>`;
+    });
+    headHTML += `</tr>`;
+    thead.innerHTML = headHTML;
+
+    // Генериране на тялото
+    if (currentCategoryProducts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">Няма налични продукти за тази категория.</td></tr>`;
+        return;
+    }
+
+    let bodyHTML = '';
+    currentCategoryProducts.forEach(product => {
+        bodyHTML += `<tr data-product-name="${product.productName.toLowerCase()}">
+            <td class="px-4 py-4">
+                <div class="font-medium text-gray-900">${product.productName}</div>
+                <div class="text-sm text-gray-500">${product.description}</div>
+            </td>`;
+            
+        appConfig.supermarkets.forEach(sm => {
+            const offer = product.offers[sm];
+            if (offer && offer.promoPrice) {
+                const unitPrice = calculateUnitPrice(offer.promoPrice, product.description);
+                bodyHTML += `<td class="px-3 py-4 bg-gray-50">
+                    <div class="font-bold text-lg text-red-600">${offer.promoPrice.toFixed(2)} €</div>
+                    ${offer.regularPrice ? `<div class="text-xs text-gray-400 line-through">${offer.regularPrice.toFixed(2)} €</div>` : ''}
+                    ${unitPrice ? `<div class="text-xs text-gray-500 mt-1">${unitPrice}</div>` : ''}
+                    <button onclick="addToShoppingList('${product.productId}', '${sm}', ${offer.promoPrice})" class="mt-2 text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded hover:bg-teal-200 transition">+ Добави</button>
+                </td>`;
+            } else {
+                bodyHTML += `<td class="px-3 py-4"><span class="text-gray-300">-</span></td>`;
+            }
+        });
+        bodyHTML += `</tr>`;
+    });
+    tbody.innerHTML = bodyHTML;
+}
+
+// --- ПОМОЩНИ ФУНКЦИИ (ЦЕНИ И ТЪРСЕНЕ) ---
+function calculateUnitPrice(price, desc) {
+    if (!desc) return null;
+    if (desc.includes('1кг') || desc.includes('1 кг')) return `${price.toFixed(2)} €/${desc.includes('л') ? 'л' : 'кг'}`;
+    const matchKg = desc.match(/(\d+)\s*кг/);
+    if (matchKg) return `${(price / parseInt(matchKg[1], 10)).toFixed(2)} €/кг`;
+    const matchG = desc.match(/(\d+)\s*г/);
+    if (matchG) return `${((price / parseInt(matchG[1], 10)) * 1000).toFixed(2)} €/кг`;
+    const matchMl = desc.match(/(\d+)\s*мл/);
+    if (matchMl) return `${((price / parseInt(matchMl[1], 10)) * 1000).toFixed(2)} €/л`;
+    return null;
+}
+
+function setupSearch() {
+    document.getElementById('search-box').addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        document.querySelectorAll('#table-body tr').forEach(row => {
+            const productName = row.dataset.productName;
+            if (productName && productName.includes(searchTerm)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    });
+}
+
+// --- СПИСЪК ЗА ПАЗАРУВАНЕ ---
+function addToShoppingList(productId, store, price) {
+    const product = currentCategoryProducts.find(p => p.productId === productId);
+    if (!product) return;
+
+    if (shoppingList[productId]) {
+        shoppingList[productId].quantity++;
+    } else {
+        shoppingList[productId] = {
+            productName: product.productName,
+            store: store,
+            price: price,
+            quantity: 1
+        };
+    }
+    updateShoppingListCount();
+}
+
+function updateShoppingListCount() {
+    const count = Object.values(shoppingList).reduce((acc, item) => acc + item.quantity, 0);
+    const countEl = document.getElementById('shopping-list-count');
+    countEl.textContent = count;
+    countEl.style.display = count > 0 ? 'flex' : 'none';
+}
+
+function showShoppingList() {
+    const modal = document.getElementById('shopping-list-modal');
+    const itemsContainer = document.getElementById('shopping-list-items');
+    modal.classList.remove('hidden');
+    
+    if (Object.keys(shoppingList).length === 0) {
+        itemsContainer.innerHTML = '<p class="text-gray-500">Списъкът е празен.</p>';
+        document.getElementById('total-price').textContent = '0.00 €';
+        return;
+    }
+
+    let html = '<ul class="divide-y divide-gray-200">';
+    let total = 0;
+    
+    for (const [id, item] of Object.entries(shoppingList)) {
+        const itemTotal = item.price * item.quantity;
+        total += itemTotal;
+        html += `<li class="py-3 flex justify-between items-center">
+            <div>
+                <p class="font-medium text-gray-900">${item.productName}</p>
+                <p class="text-xs text-gray-500">Магазин: ${appConfig.supermarketNames[item.store]}</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="text-sm font-bold">${item.price.toFixed(2)} € x ${item.quantity}</div>
+                <button onclick="removeFromShoppingList('${id}')" class="text-red-500 hover:text-red-700 font-bold">&times;</button>
+            </div>
+        </li>`;
+    }
+    html += '</ul>';
+    itemsContainer.innerHTML = html;
+    document.getElementById('total-price').textContent = `${total.toFixed(2)} €`;
+}
+
+function hideShoppingList() {
+    document.getElementById('shopping-list-modal').classList.add('hidden');
+}
+
+function removeFromShoppingList(id) {
+    delete shoppingList[id];
+    updateShoppingListCount();
+    showShoppingList(); // Презарежда изгледа
+}
+</script>
+</body>
+</html>
