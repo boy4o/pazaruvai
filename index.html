@@ -226,37 +226,79 @@ async function fetchCategoryData(categoryId) {
 
     const productsMap = new Map();
 
+    const normalizeOffer = (item, supermarket) => ({
+        promoPrice: Number(item.promoPrice ?? item.price ?? 0),
+        regularPrice: item.regularPrice != null ? Number(item.regularPrice) : null,
+        discountPercentage: item.discountPercentage,
+        validFrom: item.validFrom,
+        validTo: item.validTo,
+        loyaltyCard: item.loyaltyCard,
+        notes: item.notes,
+        supermarket
+    });
+
+    const upsertProduct = (item, supermarket) => {
+        const productId = item.productId || item.id || `${item.productName || item.name}-${item.description || ''}`;
+        const productName = item.productName || item.name;
+        if (!productName) return;
+
+        if (!productsMap.has(productId)) {
+            productsMap.set(productId, {
+                productId,
+                productName,
+                description: item.description || '',
+                offers: { billa: null, lidl: null, kaufland: null, fantastico: null }
+            });
+        }
+
+        if (supermarket && appConfig.supermarkets.includes(supermarket)) {
+            productsMap.get(productId).offers[supermarket] = normalizeOffer(item, supermarket);
+        }
+    };
+
+    const parseResponseData = (responseData, preferredStore = null) => {
+        if (Array.isArray(responseData)) {
+            responseData.forEach(item => upsertProduct(item, item.supermarket || preferredStore));
+            return;
+        }
+
+        // Формат: { products: [...] } / { items: [...] }
+        if (Array.isArray(responseData?.products) || Array.isArray(responseData?.items)) {
+            const items = responseData.products || responseData.items;
+            items.forEach(item => upsertProduct(item, item.supermarket || preferredStore));
+            return;
+        }
+
+        // Формат: { billa: [...], lidl: [...], ... }
+        appConfig.supermarkets.forEach(sm => {
+            if (Array.isArray(responseData?.[sm])) {
+                responseData[sm].forEach(item => upsertProduct(item, sm));
+            }
+        });
+    };
+
     for (const sm of appConfig.supermarkets) {
         try {
             const response = await fetch(`data/${sm}/${categoryId}.json`);
             if (!response.ok) continue; 
             
             const responseData = await response.json();
-            
-            // Фикс за JSON структурата: проверка дали върнатите данни са масив, или обект (напр. { products: [...] })
-            const items = Array.isArray(responseData) ? responseData : (responseData.products || responseData.items || []);
-            
-            for (const item of items) {
-                if (!productsMap.has(item.productId)) {
-                    productsMap.set(item.productId, {
-                        productId: item.productId,
-                        productName: item.productName,
-                        description: item.description,
-                        offers: { billa: null, lidl: null, kaufland: null, fantastico: null }
-                    });
-                }
-                productsMap.get(item.productId).offers[sm] = {
-                    promoPrice: item.promoPrice,
-                    regularPrice: item.regularPrice,
-                    discountPercentage: item.discountPercentage,
-                    validFrom: item.validFrom,
-                    validTo: item.validTo,
-                    loyaltyCard: item.loyaltyCard,
-                    notes: item.notes
-                };
-            }
+            parseResponseData(responseData, sm);
         } catch (error) {
             console.warn(`Няма данни или грешка в JSON структурата за ${sm} в категория ${categoryId}`, error);
+        }
+    }
+
+    // Fallback: един обединен JSON файл от вида data/osnovni-hrani.json
+    if (productsMap.size === 0) {
+        try {
+            const fallbackResponse = await fetch(`data/${categoryId}.json`);
+            if (fallbackResponse.ok) {
+                const fallbackData = await fallbackResponse.json();
+                parseResponseData(fallbackData);
+            }
+        } catch (error) {
+            console.warn(`Няма данни или грешка в fallback файла за категория ${categoryId}`, error);
         }
     }
 
@@ -294,7 +336,7 @@ function renderTable() {
             
         appConfig.supermarkets.forEach(sm => {
             const offer = product.offers[sm];
-            if (offer && offer.promoPrice) {
+            if (offer && Number.isFinite(offer.promoPrice) && offer.promoPrice > 0) {
                 const unitPrice = calculateUnitPrice(offer.promoPrice, product.description);
                 bodyHTML += `<td class="px-3 py-4 bg-gray-50">
                     <div class="font-bold text-lg text-red-600">${offer.promoPrice.toFixed(2)} €</div>
