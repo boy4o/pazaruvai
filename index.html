@@ -221,7 +221,7 @@ async function openCategory(categoryId, categoryName) {
     document.getElementById('table-container').classList.add('hidden');
 
     try {
-        currentCategoryProducts = await fetchCategoryData(categoryId);
+        currentCategoryProducts = await fetchCategoryData(categoryId, categoryName);
         renderTable();
     } catch (error) {
         currentCategoryProducts = [];
@@ -235,7 +235,7 @@ async function openCategory(categoryId, categoryName) {
     }
 }
 
-async function fetchJsonFromPossiblePaths(paths) {
+async function fetchRawJsonFromPossiblePaths(paths) {
     let lastError = null;
 
     for (const path of paths) {
@@ -246,26 +246,93 @@ async function fetchJsonFromPossiblePaths(paths) {
                 continue;
             }
 
-            const data = await response.json();
-            if (Array.isArray(data)) {
-                return data;
-            }
-
-            if (data && Array.isArray(data.products)) {
-                return data.products;
-            }
-
-            if (data && Array.isArray(data.items)) {
-                return data.items;
-            }
-
-            lastError = new Error(`${path} не съдържа масив с продукти.`);
+            return await response.json();
         } catch (error) {
             lastError = error;
         }
     }
 
     throw lastError || new Error('Неуспешно зареждане на JSON файла.');
+}
+
+async function fetchJsonFromPossiblePaths(paths) {
+    const data = await fetchRawJsonFromPossiblePaths(paths);
+
+    if (Array.isArray(data)) {
+        return data;
+    }
+
+    if (data && Array.isArray(data.products)) {
+        return data.products;
+    }
+
+    if (data && Array.isArray(data.items)) {
+        return data.items;
+    }
+
+    throw new Error('JSON файлът не съдържа масив с продукти.');
+}
+
+function normalizeTextForSlug(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/,/g, '')
+        .replace(/-+/g, '-');
+}
+
+function candidateCategoryFileNames(categoryId, categoryName) {
+    const names = new Set([
+        categoryId,
+        categoryId.replace(/-/g, '_'),
+        categoryName,
+        normalizeTextForSlug(categoryName),
+        normalizeTextForSlug(categoryName).replace(/-/g, '_')
+    ]);
+
+    return Array.from(names)
+        .filter(Boolean)
+        .map(name => `${name}.json`);
+}
+
+function parseStoreDataByCategory(rawData, categoryId, categoryName) {
+    const normalizedCategoryName = normalizeTextForSlug(categoryName);
+    const candidateKeys = new Set([
+        categoryId,
+        categoryId.replace(/-/g, '_'),
+        categoryName,
+        normalizedCategoryName,
+        normalizedCategoryName.replace(/-/g, '_')
+    ]);
+
+    if (Array.isArray(rawData)) {
+        return rawData;
+    }
+
+    if (!rawData || typeof rawData !== 'object') {
+        return [];
+    }
+
+    if (Array.isArray(rawData.products)) {
+        return rawData.products;
+    }
+
+    if (Array.isArray(rawData.items)) {
+        return rawData.items;
+    }
+
+    for (const key of Object.keys(rawData)) {
+        const normalizedKey = normalizeTextForSlug(key);
+        if (candidateKeys.has(key) || candidateKeys.has(normalizedKey)) {
+            const value = rawData[key];
+            if (Array.isArray(value)) return value;
+            if (value && Array.isArray(value.products)) return value.products;
+            if (value && Array.isArray(value.items)) return value.items;
+        }
+    }
+
+    return [];
 }
 
 function normalizeProduct(rawItem, store) {
@@ -291,7 +358,7 @@ function normalizeProduct(rawItem, store) {
     };
 }
 
-async function fetchCategoryData(categoryId) {
+async function fetchCategoryData(categoryId, categoryName) {
     if (loadedProducts[categoryId]) return loadedProducts[categoryId];
 
     const productsMap = new Map();
@@ -299,10 +366,33 @@ async function fetchCategoryData(categoryId) {
 
     for (const sm of appConfig.supermarkets) {
         try {
-            const items = await fetchJsonFromPossiblePaths([
-                `data/${sm}/${categoryId}.json`,
-                `./data/${sm}/${categoryId}.json`
-            ]);
+            const categoryFileNames = candidateCategoryFileNames(categoryId, categoryName);
+            const directCategoryPaths = categoryFileNames.flatMap(fileName => ([
+                `data/${sm}/${fileName}`,
+                `./data/${sm}/${fileName}`
+            ]));
+
+            let items = [];
+
+            try {
+                items = await fetchJsonFromPossiblePaths(directCategoryPaths);
+            } catch (_directPathsError) {
+                const storeFiles = await fetchRawJsonFromPossiblePaths([
+                    `data/${sm}.json`,
+                    `./data/${sm}.json`,
+                    `data/${sm}/products.json`,
+                    `./data/${sm}/products.json`,
+                    `data/${sm}/data.json`,
+                    `./data/${sm}/data.json`,
+                    `data/${sm}/all.json`,
+                    `./data/${sm}/all.json`
+                ]);
+
+                items = parseStoreDataByCategory(storeFiles, categoryId, categoryName);
+                if (!Array.isArray(items) || items.length === 0) {
+                    throw new Error(`Липсват продукти за ${categoryName} в общия JSON файл на ${sm}.`);
+                }
+            }
 
             anyDataLoaded = true;
 
