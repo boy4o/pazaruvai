@@ -226,34 +226,68 @@ async function fetchCategoryData(categoryId) {
 
     const productsMap = new Map();
 
+    const upsertProductOffer = (item, supermarket) => {
+        if (!item || !item.productId || !item.productName) return;
+
+        if (!productsMap.has(item.productId)) {
+            productsMap.set(item.productId, {
+                productId: item.productId,
+                productName: item.productName,
+                description: item.description,
+                offers: { billa: null, lidl: null, kaufland: null, fantastico: null }
+            });
+        }
+
+        const safeSupermarket = appConfig.supermarkets.includes(supermarket) ? supermarket : null;
+        if (!safeSupermarket) return;
+
+        productsMap.get(item.productId).offers[safeSupermarket] = {
+            promoPrice: item.promoPrice,
+            regularPrice: item.regularPrice,
+            discountPercentage: item.discountPercentage,
+            validFrom: item.validFrom,
+            validTo: item.validTo,
+            loyaltyCard: item.loyaltyCard,
+            notes: item.notes
+        };
+    };
+
+    const normalizeItems = (data) => {
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data?.products)) return data.products;
+        if (Array.isArray(data?.items)) return data.items;
+        return [];
+    };
+
+    const mergeResponseData = (responseData, fallbackSupermarket) => {
+        const directItems = normalizeItems(responseData);
+        if (directItems.length > 0) {
+            directItems.forEach(item => upsertProductOffer(item, item.supermarket || fallbackSupermarket));
+            return;
+        }
+
+        // Поддържа структура в един файл, напр. { billa: [...], lidl: [...], ... }
+        appConfig.supermarkets.forEach(sm => {
+            const smItems = normalizeItems(responseData?.[sm]);
+            smItems.forEach(item => upsertProductOffer(item, sm));
+        });
+    };
+
     for (const sm of appConfig.supermarkets) {
         try {
-            const response = await fetch(`data/${sm}/${categoryId}.json`);
-            if (!response.ok) continue; 
-            
-            const responseData = await response.json();
-            
-            // Фикс за JSON структурата: проверка дали върнатите данни са масив, или обект (напр. { products: [...] })
-            const items = Array.isArray(responseData) ? responseData : (responseData.products || responseData.items || []);
-            
-            for (const item of items) {
-                if (!productsMap.has(item.productId)) {
-                    productsMap.set(item.productId, {
-                        productId: item.productId,
-                        productName: item.productName,
-                        description: item.description,
-                        offers: { billa: null, lidl: null, kaufland: null, fantastico: null }
-                    });
-                }
-                productsMap.get(item.productId).offers[sm] = {
-                    promoPrice: item.promoPrice,
-                    regularPrice: item.regularPrice,
-                    discountPercentage: item.discountPercentage,
-                    validFrom: item.validFrom,
-                    validTo: item.validTo,
-                    loyaltyCard: item.loyaltyCard,
-                    notes: item.notes
-                };
+            const candidateUrls = [
+                `data/${sm}/${categoryId}.json`,
+                `data/${categoryId}.json`,
+                `${categoryId}.json`
+            ];
+
+            for (const url of candidateUrls) {
+                const response = await fetch(url);
+                if (!response.ok) continue;
+
+                const responseData = await response.json();
+                mergeResponseData(responseData, sm);
+                break;
             }
         } catch (error) {
             console.warn(`Няма данни или грешка в JSON структурата за ${sm} в категория ${categoryId}`, error);
