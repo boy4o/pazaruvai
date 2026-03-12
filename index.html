@@ -185,6 +185,32 @@ const categoryFallbackStore = {
     'osnovni-hrani': 'billa'
 };
 
+function toTitleCase(value) {
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
+
+function buildCandidatePaths(store, categoryId) {
+    const storeVariants = [store, store.toLowerCase(), store.toUpperCase(), toTitleCase(store)];
+    const categoryVariants = [categoryId, categoryId.toLowerCase(), categoryId.toUpperCase(), toTitleCase(categoryId)];
+    const pathPatterns = [
+        (sm, cat) => `data/${sm}/${cat}.json`,
+        (sm, cat) => `./data/${sm}/${cat}.json`,
+        (sm, cat) => `data/${cat}/${sm}.json`,
+        (sm, cat) => `./data/${cat}/${sm}.json`
+    ];
+
+    const paths = [];
+    pathPatterns.forEach(pattern => {
+        storeVariants.forEach(sm => {
+            categoryVariants.forEach(cat => {
+                paths.push(pattern(sm, cat));
+            });
+        });
+    });
+
+    return [...new Set(paths)];
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     populateNavigation();
     showPage('home');
@@ -269,6 +295,9 @@ async function fetchJsonFromPossiblePaths(paths) {
 }
 
 function normalizeProduct(rawItem, store) {
+    const promoPrice = typeof rawItem.promoPrice === 'number' ? rawItem.promoPrice : Number(rawItem.promoPrice);
+    const normalizedPromoPrice = Number.isFinite(promoPrice) ? promoPrice : null;
+
     return {
         productId: rawItem.productId || `${store}-${rawItem.productName || 'item'}-${rawItem.description || ''}`,
         productName: rawItem.productName || 'Без име',
@@ -279,7 +308,7 @@ function normalizeProduct(rawItem, store) {
             kaufland: null,
             fantastico: null,
             [store]: {
-                promoPrice: typeof rawItem.promoPrice === 'number' ? rawItem.promoPrice : Number(rawItem.promoPrice),
+                promoPrice: normalizedPromoPrice,
                 regularPrice: rawItem.regularPrice === null || rawItem.regularPrice === undefined || rawItem.regularPrice === '' ? null : Number(rawItem.regularPrice),
                 discountPercentage: rawItem.discountPercentage === null || rawItem.discountPercentage === undefined || rawItem.discountPercentage === '' ? null : Number(rawItem.discountPercentage),
                 validFrom: rawItem.validFrom || '',
@@ -291,6 +320,15 @@ function normalizeProduct(rawItem, store) {
     };
 }
 
+function getMergeKey(item, store) {
+    const byId = item.productId && String(item.productId).trim();
+    if (byId) return `id:${byId}`;
+
+    const name = String(item.productName || '').trim().toLowerCase();
+    const description = String(item.description || '').trim().toLowerCase();
+    return `named:${store}:${name}:${description}`;
+}
+
 async function fetchCategoryData(categoryId) {
     if (loadedProducts[categoryId]) return loadedProducts[categoryId];
 
@@ -299,25 +337,25 @@ async function fetchCategoryData(categoryId) {
 
     for (const sm of appConfig.supermarkets) {
         try {
-            const items = await fetchJsonFromPossiblePaths([
-                `data/${sm}/${categoryId}.json`,
-                `./data/${sm}/${categoryId}.json`
-            ]);
+            const items = await fetchJsonFromPossiblePaths(buildCandidatePaths(sm, categoryId));
 
             anyDataLoaded = true;
 
             for (const item of items) {
-                if (!productsMap.has(item.productId)) {
-                    productsMap.set(item.productId, {
-                        productId: item.productId,
+                const mergeKey = getMergeKey(item, sm);
+                if (!productsMap.has(mergeKey)) {
+                    productsMap.set(mergeKey, {
+                        productId: item.productId || mergeKey,
                         productName: item.productName,
                         description: item.description,
                         offers: { billa: null, lidl: null, kaufland: null, fantastico: null }
                     });
                 }
 
-                productsMap.get(item.productId).offers[sm] = {
-                    promoPrice: typeof item.promoPrice === 'number' ? item.promoPrice : Number(item.promoPrice),
+                const promoPrice = typeof item.promoPrice === 'number' ? item.promoPrice : Number(item.promoPrice);
+
+                productsMap.get(mergeKey).offers[sm] = {
+                    promoPrice: Number.isFinite(promoPrice) ? promoPrice : null,
                     regularPrice: item.regularPrice === null || item.regularPrice === undefined || item.regularPrice === '' ? null : Number(item.regularPrice),
                     discountPercentage: item.discountPercentage === null || item.discountPercentage === undefined || item.discountPercentage === '' ? null : Number(item.discountPercentage),
                     validFrom: item.validFrom || '',
